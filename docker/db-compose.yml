@@ -1,0 +1,78 @@
+# Virtuálna sieť pre aplikáciu.
+# V rámci nej sa budú kontajnery navzájom nachádzať pod názvom služby —
+# napríklad Spring Boot → "company-postgres"
+networks:
+  company-app-net:
+    driver: bridge
+
+services:
+  # --- PostgresSQL pre Company App ---
+  company-postgres:
+    image: postgres:16-alpine  # Konkrétna verzia PostgresSQL (stabilná dlhodobá verzia)
+    container_name: company-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_COMPANYDB_DB}             # Fallback hodnota za :- ak by .env chýbal
+      POSTGRES_USER: ${POSTGRES_COMPANYDB_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_COMPANYDB_PASSWORD}
+    ports:
+      # Formát HOST:CONTAINER
+      # Zvonku → localhost:5433 (aby nekolidovalo s inými Postgres)
+      # Vnútri kontajnera → default PostgresSQL port 5432
+      - "5433:5432"
+    volumes:
+      # Ukladanie DB dát mimo kontajnera ⇒ zostanú aj po reštarte
+      - company_pg_data:/var/lib/postgresql/data
+    networks:
+      # Databáza je dostupná pre všetky služby v tejto docker sieti
+      - company-app-net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-companyuser} -d ${POSTGRES_DB:-companydb}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s # Čas na boot db enginu pred prvým checkom
+    # Voliteľné: Resource limity (dobrá prax, aby DB nezjedla celú RAM ak sa zblázni query)
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+# --- PostgresSQL pre Audit log service ---
+  audit-log-postgres:
+    image: postgres:16-alpine  # Konkrétna verzia PostgresSQL (stabilná dlhodobá verzia)
+    container_name: audit-log-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_AUDITLOG_DB}             # Fallback hodnota za :- ak by .env chýbal
+      POSTGRES_USER: ${POSTGRES_AUDITLOG_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_AUDITLOG_PASSWORD}
+    ports:
+      # Formát HOST:CONTAINER
+      # Zvonku → localhost:5433 (aby nekolidovalo s inými Postgres)
+      # Vnútri kontajnera → default PostgresSQL port 5432
+      - "5434:5432"
+    volumes:
+      # Ukladanie DB dát mimo kontajnera ⇒ zostanú aj po reštarte
+      - audit_log_pg_data:/var/lib/postgresql/data
+    networks:
+      # Databáza je dostupná pre všetky služby v tejto docker sieti
+      - company-app-net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-companyuser} -d ${POSTGRES_DB:-companydb}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s # Čas na boot db enginu pred prvým checkom
+    # Voliteľné: Resource limity (dobrá prax, aby DB nezjedla celú RAM ak sa zblázni query)
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+# Perzistentný docker volume určený pre databázové súbory
+volumes:
+  company_pg_data:
+    driver: local
+  audit_log_pg_data:
+    driver: local

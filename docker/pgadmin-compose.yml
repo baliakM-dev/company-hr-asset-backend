@@ -1,0 +1,40 @@
+# ---Virtuálne siete ---
+# Siete musia byť externé, lebo už existujú v iných docker-compose projektoch
+networks:
+  # Sieť Keycloak-u (zdielaná s ďalšími kontajnermi)
+  keycloak_net:
+    name: keycloak_keycloak_network # Toto meno musí existovať v Dockeri
+    external: true # Docker-compose nebude sieť vytvárať, len ju použije
+  # Sieť Company App (beží tam tvoja Spring Boot aplikácia + DB)
+  company-app-net:
+    name: companyapp_company-app-net
+    external: true
+
+services:
+  # --- Služba PGAdmin (GUI pre správu PostgresSQL) ---
+  pgadmin:
+    image: dpage/pgadmin4:9.10.0
+    container_name: pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com} # Email pre prihlásenie do GUI
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin} # Heslo pre prihlásenie
+      # Vypnutie master hesla pre pohodlnejší dev (voliteľné, ale na lokále to šetrí nervy)
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "5050:80" # Otvoríme PGAdmin na http://localhost:5050
+    volumes:
+      # Perzistentné dáta pre PGAdmin – uložené servery, config
+      - pgadmin_data:/var/lib/pgadmin
+      # Namapujeme JSON súbor, ktorý povie pgAdminu, kde sú naše databázy.
+      # Nemusíš ich už nikdy pridávať ručne cez GUI.
+      - ./servers.json:/pgadmin4/servers.json
+    networks:
+      # Pripojenie k obom sieťam, aby sme videli DB Keycloak-u aj DB Company App
+      - keycloak_net
+      - company-app-net
+
+# --- Volume definícia ---
+volumes:
+  pgadmin_data:
+    driver: local
