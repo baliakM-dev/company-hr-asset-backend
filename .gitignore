@@ -1,4 +1,7 @@
 .idea
 docker/.env
+company-app/build
+company-app/.gitattributes
+company-app/.gradle
 sql
 data

@@ -1,0 +1,31 @@
+# --- SPOLOČNÁ KONFIGURÁCIA (DEFAULT) ---
+server:
+  port: 8082
+
+spring:
+  threads:
+    virtual:
+      enabled: true
+  application:
+    name: company-app
+  profiles:
+    active: dev
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true # Užitočné pre existujúce DB bez histórie
+
+  security:
+    oauth2:
+      resource server:
+        jwt:
+          issuer-uri: ${KEYCLOAK_SERVERURL}/realms/${KEYCLOAK_REALM}
+          authorities-claim-name: roles
+          authority-prefix: ROLE_
+
+keycloak:
+  server-url: ${KEYCLOAK_SERVER_URL}
+  realm: ${KEYCLOAK_REALM}
+  client-id-admin: ${KEYCLOAK_CLIENT_ID_ADMIN}
+  client-secret: ${KEYCLOAK_CLIENT_SECRET}

@@ -1,0 +1,17 @@
+# --- TEST PROFIL (Neon DB / Cloud / Integračné testy) ---
+# Aktivuje sa cez: -Dspring.profiles.active=test
+spring:
+  config:
+    activate:
+      on-profile: test
+
+  datasource:
+    url: ${POSTGRES_COMPANYDB_NEON_URL}
+    username: ${POSTGRES_COMPANYDB_NEON_USER}
+    password: ${POSTGRES_COMPANYDB_NEON_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: validate
