@@ -76,7 +76,6 @@ graph TD
 | **Keycloak** | Identity & Access Management (IAM) |
 | **Docker Compose** | Local environment orchestration |
 
-
 ---
 📚 Documentation & Manuals
 Detailed guides for specific parts of the infrastructure can be found in the manuals/ directory:
