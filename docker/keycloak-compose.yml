@@ -1,0 +1,89 @@
+# Služby v tejto sieti (postgres, keycloak) sa môžu navzájom nájsť
+# a komunikovať pomocou svojho mena služby.
+networks:
+  keycloak_network:
+    driver: bridge
+
+services:
+  # --- Služba PostgresSQL Databázy ---
+  postgres:
+    image: postgres:16-alpine # Používame ľahkú verziu Postgres 16
+    container_name: postgres # Pevné meno, na, ktoré sa Keycloak pripojí
+    volumes:
+      # Pripájame pomenovaný volume 'postgres_data' na adresár v kontajneri.
+      # Toto zabezpečí, že dáta (používatelia, realm…) prežijú reštart.
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      # Tieto premenné sa načítajú zo súboru .env.
+      # Postgres ich použije IBA PRI PRVOM SPUSTENÍ na vytvorenie DB a user.
+      POSTGRES_DB: ${KEYCLOAK_POSTGRES_DB}
+      POSTGRES_USER: ${KEYCLOAK_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${KEYCLOAK_POSTGRES_PASSWORD}
+    networks:
+      - keycloak_network # Pripojenie do našej siete
+    ports:
+      # Mapovanie portov HOST:KONTAJNER.
+      # Sprístupní Postgres na porte 5440 na vašom localhoste.
+      # Užitočné pre pripojenie cez pgAdmin alebo DBeaver.
+      - "5440:5432"
+    healthcheck:
+      # Toto je kritické pre stabilitu.
+      # Docker bude kontrolovať, či je DB pripravená prijímať spojenia.
+      test: [ "CMD-SHELL", "pg_isready -U ${KEYCLOAK_POSTGRES_USER} -d ${KEYCLOAK_POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Služba Keycloak (Identity and Access Management) ---
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1.2 # Oficiálny Keycloak image
+    container_name: keycloak
+    restart: unless-stopped  # Lepšie ako 'always', ak ho stopneš manuálne, ostane stopnutý
+    # Toto spúšťa Keycloak vo vývojárskom móde, ktorý je rýchlejší
+    # a hlavne POVOĽUJE HTTP (rieši 'HTTPS required' chybu).
+    # Pridal som --import-realm.
+    # Ak vložíš súbor 'realm-export.json' do priečinka ./keycloak-data/import (viď volumes),
+    # Keycloak sa spustí už predkonfigurovaný (s klientmi, rolami atď).
+    networks:
+      - keycloak_network # Pripojenie do našej siete
+    depends_on:
+      postgres:
+        # Prikáže tomuto kontajneru, aby sa nespustil,
+        # kým 'healthcheck' služby 'postgres' neprejde.
+        # Zabraňuje chybám "Connection refused“ pri štarte.
+        condition: service_healthy
+    command: start-dev --import-realm
+    environment:
+      # Admin prihlasovacie údaje (moderný, v2 spôsob)
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Pripojenie k databáze
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres/${KEYCLOAK_POSTGRES_DB}
+      KC_DB_USERNAME: ${KEYCLOAK_POSTGRES_USER} # Musí sa zhodovať s Postgresom
+      KC_DB_PASSWORD: ${KEYCLOAK_POSTGRES_PASSWORD} # Musí sa zhodovať s Postgresom
+      # Používame moderné v2 premenné na nastavenie verejnej adresy.
+      KC_HTTP_ENABLED: "true" # Explicitne povoľujeme HTTP
+      # Hovoríme Keycloaku: "Tvoja verejná adresa je http://localhost:8081".
+      # MUSÍ sa zhodovať s portom, ktorý definujeme v sekcii 'ports:'.
+      KC_HOSTNAME_URL: "http://localhost:8081"
+      # Pre Docker sieťovú komunikáciu (ak by Spring Boot volal Keycloak interne cez Docker sieť)
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      # Observability (Voliteľné, ale dobré pre produkčný mindset)
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+    ports:
+      # Mapovanie portov HOST:KONTAJNER.
+      # '127.0.0.1' (localhost) - Služba bude dostupná iba z vášho počítača.
+      # '8081' (HOST) - Port, ktorý zadáte do prehliadača (http://localhost:8081).
+      # '8080' (KONTAJNER) - Port, na ktorom Keycloak beží vnútri kontajnera.
+      - "127.0.0.1:8081:8080"
+#    volumes:
+    # Pripravené na import konfigurácie (odkomentuj a vytvor priečinok, keď to budeš potrebovať)
+    # - ./keycloak-data/import:/opt/keycloak/data/import
+  
+volumes:
+  # Tu formálne definujeme pomenovaný volume, ktorý používa Postgres.
+  postgres_data:
+    driver: local

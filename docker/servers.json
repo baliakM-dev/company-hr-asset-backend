@@ -1,0 +1,34 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Keycloak DB",
+      "Group": "Identity Management",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "keycloak",
+      "SSLMode": "prefer",
+      "Comment": "Automaticky importované pri štarte"
+    },
+    "2": {
+      "Name": "Company App DB",
+      "Group": "Business Logic",
+      "Host": "company-postgres",
+      "Port": 5432,
+      "MaintenanceDB": "companydb",
+      "Username": "companyuser",
+      "SSLMode": "prefer",
+      "Comment": "Hlavná databáza aplikácie"
+    },
+    "3": {
+      "Name": "Audit Log Service DB",
+      "Group": "Audit Log",
+      "Host": "audit-log-postgres",
+      "Port": 5432,
+      "MaintenanceDB": "auditlogdb",
+      "Username": "auditloguser",
+      "SSLMode": "prefer",
+      "Comment": "Databáza pre audit logy"
+    }
+  }
+}

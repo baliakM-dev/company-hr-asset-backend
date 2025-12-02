@@ -1,0 +1,99 @@
+# Virtuálna sieť s názvom kafka-net. Ak su obe služby v rovnakej sieti, môžu sa navzájom nájsť a komunikovať pomocou
+# svojho mena služby teda (kafka-ui, kafka1)
+networks:
+  kafka-net:
+    driver: bridge
+
+services:
+  # --- Služba Kafka (v KRaft móde, single-node) ---
+  kafka1:
+    image: confluentinc/cp-kafka:7.8.0 #Používame špecifickú verziu (7.8.0) Confluent Kafka image.
+    #Pomenujeme kontajner kafka1. Toto je dôležité, pretože sa na toto meno odvolávame v konfigurácii.
+    hostname: kafka1
+    container_name: kafka1
+    networks:
+      - kafka-net
+    # Toto je kľúčové pre pripojenie z vašej Spring Boot aplikácie (ktorá beží na localhost mimo Docker).
+    # 9092: External (Spring Boot -> Localhost:9092)
+    # 9093: Controller (Interné riadenie klastra)
+    # 29092: Internal (Kafka UI -> kafka1:29092) - štandardná konvencia pre interný port
+    ports:
+      - "9092:9092"
+    # Toto pripojí adresár /var/lib/kafka/data (kde si Kafka ukladá témy a logy) na disk vášho počítača. Keď kontajner
+    # zastavíte a zmažete (docker-compose down), tento volume zostane a pri ďalšom spustení (docker-compose up) sa Kafka zobudí s rovnakými dátami.
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+    environment:
+    # PROCESS_ROLES: Hovoríme Kafke: "Zabudni na Zookeeper. Budeš sám sebe šéfom." Tento uzol bude aj broker (dáta) aj controller (správa).
+      KAFKA_NODE_ID: 1
+      KAFKA_BROKER_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+    # QUORUM_VOTERS: Definujeme, kto v klastri "volí“. Keďže sme tu sami, volíme sami seba (node_id=1 na adrese kafka1:9093).
+    # Port 9093 sa musí zhodovať s tým, čo sme definovali pre CONTROLLER listenera nižšie.
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:9093' # Controller beží na porte 9093
+
+      # ---Konfigurácia Listenerov (Kľúčová časť) ---
+
+      # 1. Definujeme 3 interné listenery na 3 RÔZNYCH portoch:
+      #    - INTERNAL (pre Kafka-UI): port 9092 Pre služby v tej istej Docker sieti (ako kafka-ui).
+      #    - CONTROLLER (pre KRaft): port 9093 Pre internú komunikáciu KRaft protokolu.
+      #    - EXTERNAL (pre Spring Boot): port 9094 Pre klientov zvonku (ako vaša Spring Boot app).
+      KAFKA_LISTENERS: 'INTERNAL://:29092,CONTROLLER://:9093,EXTERNAL://:9092'
+
+      # 2. Ohlásime svetu, ako sa k nám pripojiť:
+      #    - Keď sa kafka-ui pripojí na INTERNAL dvere: Kafka mu povie: "Super, odteraz ma hľadaj na adrese kafka1:9092."
+      #    - (Toto funguje, lebo sú v rovnakej sieti).
+      #    - Služby v 'kafka-net' (Kafka-UI) použijú 'kafka1:9092'
+      #    - Služby mimo Dockera (Spring Boot) použijú 'localhost:9093'
+      #    - Keď sa Spring Boot pripojí na EXTERNAL dvere: Kafka mu povie: "Výborne, odteraz ma hľadaj na adrese localhost:9093
+      KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka1:29092,EXTERNAL://localhost:9092'
+
+      # 3. Zvyšok konfigurácie listenerov (rieši chybu z logu)
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT'
+
+      # ---Konfigurácia pre single-node ---
+      # REPLICATION_FACTOR: 1: Extrémne dôležité. Keďže máme len jeden broker, nemôžeme mať (predvolené) 3 repliky.
+      # Týmto hovoríme: "Všetky témy a dáta budú existovať iba v jednej kópii."
+      CLUSTER_ID: 'EmptNWtoR4GGWx-BH6nGLQ'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      # Java Heap Options (Aby ti to nezožralo celú RAM na dev stroji)
+      KAFKA_HEAP_OPTS: "-Xmx512M -Xms512M"
+    # --- HEALTHCHECK (Senior Level) ---
+    # Toto zabezpečí, že dependent služby (UI, Spring App) budú vedieť, kedy je Kafka naozaj ready
+    healthcheck:
+      test: nc -z localhost 9092 || exit 1
+      start_period: 15s
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+  # --- Služba Kafka-UI ---
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: kafka_cluster_ui
+    networks:
+      - kafka-net
+    ports:
+      # 9092: Port, ktorý otvárate vo svojom prehliadači (http://localhost:9092).
+      # 8080: Predvolený port, na ktorom beží aplikácia vnútri kafka-ui kontajnera.
+      - "8888:8080" # ZMENA: UI presunuté na 8888, aby nekolidovalo so Spring Boot (8080)
+    depends_on:
+      kafka1:
+        condition: service_healthy # Čaká, kým prejde healthcheck Kafky!
+    environment:
+      KAFKA_CLUSTERS_0_NAME: 'Lokalny Klaster'
+      # Pripája sa cez interný Docker port
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: 'kafka1:29092'
+      # Dynamická konfigurácia (voliteľné, ale užitočné)
+      DYNAMIC_CONFIG_ENABLED: 'true'
+
+volumes:
+  kafkadata:
