@@ -1,6 +1,7 @@
 package com.company.company_app.dto.employee;
 
 import com.company.company_app.dto.address.CreateAddressDto;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 
 import java.time.LocalDate;
@@ -15,5 +16,6 @@ public record CreateEmployeeRequest(
         @NotBlank String keycloakName,
         @NotNull String keycloakPassword,
         LocalDate startedWork,
-        List<CreateAddressDto> addresses
-) {}
+        @Valid List<@Valid CreateAddressDto> addresses
+) {
+}

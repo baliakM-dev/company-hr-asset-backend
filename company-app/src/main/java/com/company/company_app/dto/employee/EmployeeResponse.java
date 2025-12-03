@@ -9,8 +9,9 @@ import java.util.UUID;
 
 public record EmployeeResponse(
         UUID id,
-        String fullName, // Computed field
+        String fullName,
         String email,
+        String keycloakName,
         EmployeeStatus status,
         LocalDate startedWork,
         List<AddressResponse> addresses

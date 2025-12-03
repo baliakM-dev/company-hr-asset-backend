@@ -2,12 +2,12 @@ package com.company.company_app.services;
 
 import com.company.company_app.domain.Employee;
 import com.company.company_app.dto.employee.CreateEmployeeRequest;
+import com.company.company_app.dto.employee.EmployeeResponse;
 import com.company.company_app.exceptions.UserAlreadyExistsException;
 import com.company.company_app.mapper.EmployeeMapper;
 import com.company.company_app.repository.EmployeeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.errors.DuplicateResourceException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,16 +28,19 @@ public class EmployeeService {
      * 4. (Rollback): Ak DB zlyhá, zmaže konto v Keycloaku.
      */
     @Transactional // DB transakcia začína tu
-    public UUID createEmployee(CreateEmployeeRequest request) {
-        log.info("Processing creation request for employee: {}", request.keycloakName());
+    public EmployeeResponse createEmployee(CreateEmployeeRequest request) {
+        log.info("Processing creation request for employee email={}, keycloakName={}", request.email(), request.keycloakName());
 
         // 1. Fail-Fast Validácia (ušetríme volanie na Keycloak)
-        if (employeeRepository.existsByEmail(request.email()))
-            throw new UserAlreadyExistsException("User with email '" + request.email() + "' already exists.");
+        if (employeeRepository.existsByEmail(request.email())) {
+            throw new UserAlreadyExistsException(
+                    "User with email '" + request.email() + "' already exists.");
+        }
 
-        if (employeeRepository.existsByKeycloakName(request.keycloakName()))
-            throw new UserAlreadyExistsException("Keycloak Name " + request.keycloakName() + " already exists");
-
+        if (employeeRepository.existsByKeycloakName(request.keycloakName())) {
+            throw new UserAlreadyExistsException(
+                    "Keycloak name '" + request.keycloakName() + "' already exists.");
+        }
 
         try {
             // 3. Mapovanie (DTO -> Entity)
@@ -58,15 +61,15 @@ public class EmployeeService {
             }
 
             // 4. Uloženie (Hibernate Cascade uloží aj adresy)
-            employeeRepository.save(employee);
+            Employee saved = employeeRepository.save(employee);
+            log.info("Employee created successfully with ID={} and keycloakId={}",
+                    saved.getId(), saved.getKeycloakID());
 
-            log.info("Employee created successfully with ID: {}", employee.getId());
-            return employee.getId();
-
-        } catch (Exception e) {
+            return employeeMapper.toResponse(saved);
+        } catch (RuntimeException ex) {
             // 🛑 KOMPENZÁCIA: Ak DB padne, musíme upratať Keycloak
-            log.error("Database save failed. Rolling back Keycloak user: {}", e);
-            throw e; // Prehodíme chybu ďalej, aby Spring spravil DB Rollback
+            log.error("Database save failed. Rolling back Keycloak user: {}", ex);
+            throw ex; // Prehodíme chybu ďalej, aby Spring spravil DB Rollback
         }
     }
 }
