@@ -23,7 +23,7 @@ spring:
           issuer-uri: ${KEYCLOAK_SERVERURL}/realms/${KEYCLOAK_REALM}
           authorities-claim-name: roles
           authority-prefix: ROLE_
-
+          
 keycloak:
   server-url: ${KEYCLOAK_SERVER_URL}
   realm: ${KEYCLOAK_REALM}
