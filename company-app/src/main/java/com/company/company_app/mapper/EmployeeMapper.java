@@ -39,6 +39,16 @@ public interface EmployeeMapper {
     EmployeeResponse toResponse(Employee e);
 
     /**
+     * SUMMARY RESPONSE: Používa sa pre zoznamy (ignoruje adresy pre optimalizáciu).
+     * <p>
+     * Zoznam adries bude v JSONe null.
+     */
+    @Mapping(target = "fullName", expression = "java(e.getFirstName() + \", \" + e.getLastName())")
+    @Mapping(target = "keycloakName", source = "keycloakName")
+    @Mapping(target = "addresses", ignore = true) // ✅ Tu ignorujeme adresy
+    EmployeeResponse toSummary(Employee e);
+
+    /**
      * Konvertuje entitu adresy na DTO.
      * <p>
      * Spája ulicu a mesto do jedného reťazca pre zobrazenie vo výpisoch.

@@ -10,6 +10,7 @@ import com.company.company_app.exceptions.UserNotFoundException;
 import com.company.company_app.mapper.EmployeeMapper;
 import com.company.company_app.repository.EmployeeRepository;
 import com.company.company_app.repository.EmployeeSpecifications;
+import com.company.company_app.services.keycloak.KeycloakUserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -31,6 +32,7 @@ import java.util.UUID;
 public class EmployeeService {
     private final EmployeeRepository employeeRepository;
     private final EmployeeMapper employeeMapper;
+    private final KeycloakUserService keycloakUserService;
 
     /**
      * Vytvorí a perzistuje nového zamestnanca.
@@ -64,13 +66,17 @@ public class EmployeeService {
                     "Keycloak name '" + request.keycloakName() + "' already exists.");
         }
 
+        String keycloakId = null;
         try {
+            // 2. Najprv vytvorime usera v keycloaku
+            keycloakId = keycloakUserService.createUser(request);
+
             // 3. Mapovanie (DTO -> Entity)
             Employee employee = employeeMapper.toEntity(request);
 
             // Generovanie identifikátorov (Simulácia ID z externého systému)
             employee.setId(UUID.randomUUID());
-            employee.setKeycloakID(UUID.randomUUID().toString());
+            employee.setKeycloakID(keycloakId);
 
             // 3. Spracovanie adries (ak existujú)
             if (request.addresses() != null) {
@@ -83,12 +89,14 @@ public class EmployeeService {
 
             // 4. Uloženie (Hibernate Cascade uloží aj adresy)
             Employee saved = employeeRepository.save(employee);
-            log.info("Employee created successfully with ID={} and keycloakId={}",saved.getId(), saved.getKeycloakID());
+            log.info("Employee created successfully with ID={} and keycloakId={}", saved.getId(), saved.getKeycloakID());
 
             return employeeMapper.toResponse(saved);
         } catch (RuntimeException ex) {
             // 🛑 KOMPENZÁCIA: Ak DB padne, musíme upratať Keycloak
             log.error("Database save failed. Rolling back Keycloak user: {}", ex.getMessage());
+            if (keycloakId != null) keycloakUserService.deleteUser(keycloakId);
+
             throw ex; // Prehodíme chybu ďalej, aby Spring spravil DB Rollback
         }
     }
@@ -138,7 +146,7 @@ public class EmployeeService {
         Page<Employee> page = employeeRepository.findAll(spec, pageable);
 
         // 3. Mapovanie na DTO
-        return page.map(employeeMapper::toResponse);
+        return page.map(employeeMapper::toSummary);
     }
 
     /**
