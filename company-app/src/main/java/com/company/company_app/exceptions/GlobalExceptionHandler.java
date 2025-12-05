@@ -3,6 +3,8 @@ package com.company.company_app.exceptions;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -13,15 +15,28 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Centrálny handler pre správu výnimiek v celej aplikácii.
+ * <p>
+ * Táto trieda zachytáva výnimky vyhodené z Controllerov a transformuje ich na
+ * štandardizovanú odpoveď podľa špecifikácie <strong>RFC 7807: Problem Details for HTTP APIs</strong>.
+ * <p>
+ * Použitie triedy {@link ProblemDetail} (novinka v Spring Boot 3 / Spring Framework 6)
+ * zabezpečuje konzistentnú štruktúru chybových odpovedí pre klientov API.
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /**
+     * Spracováva biznis výnimku, keď sa pokúšame vytvoriť zdroj, ktorý už existuje.
+     *
+     * @param ex Výnimka obsahujúca detail konfliktu.
+     * @return {@link ProblemDetail} so statusom {@code 409 Conflict}.
+     */
     @ExceptionHandler(UserAlreadyExistsException.class)
     public ProblemDetail handleUserAlreadyExists(UserAlreadyExistsException ex) {
-        // 1. Vytvoríme štandardizovanú odpoveď 409 Conflict
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
 
-        // 2. Môžeme pridať metadáta (napr. typ chyby, čas)
         problem.setTitle("User Already Exists");
         problem.setType(URI.create("urn:problem-type:conflict"));
         problem.setProperty("timestamp", Instant.now());
@@ -29,6 +44,15 @@ public class GlobalExceptionHandler {
         return problem;
     }
 
+    /**
+     * Spracováva validačné chyby vzniknuté pri anotácii {@code @Valid} na vstupných DTO.
+     * <p>
+     * Extrahuje zoznam chybných polí a pridáva ich do sekcie {@code invalid-params}
+     * v odpovedi, čo umožňuje klientovi presne identifikovať chyby vo formulári.
+     *
+     * @param ex Výnimka obsahujúca výsledky validácie (BindingResult).
+     * @return {@link ProblemDetail} so statusom {@code 400 Bad Request}.
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidationErrors(MethodArgumentNotValidException ex) {
 
@@ -40,7 +64,6 @@ public class GlobalExceptionHandler {
         problem.setType(URI.create("urn:problem-type:validation-error"));
         problem.setProperty("timestamp", Instant.now());
 
-        // RFC 9457 štandard: invalid-params
         Map<String, String> invalidParams = new HashMap<>();
         for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
             invalidParams.put(fieldError.getField(), fieldError.getDefaultMessage());
@@ -51,6 +74,15 @@ public class GlobalExceptionHandler {
         return problem;
     }
 
+    /**
+     * Catch-all handler pre neočakávané chyby (NullPointerException, a pod.).
+     * <p>
+     * Z bezpečnostných dôvodov <strong>nevracia</strong> stack trace ani detailnú správu chyby,
+     * aby nedošlo k úniku citlivých informácií o infraštruktúre.
+     *
+     * @param ex Akákoľvek neošetrená výnimka.
+     * @return {@link ProblemDetail} so statusom {@code 500 Internal Server Error}.
+     */
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleGeneric(Exception ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected server error occurred.");
@@ -62,8 +94,17 @@ public class GlobalExceptionHandler {
         return problem;
     }
 
-    // 3. Ošetrenie DB Constraintov (Unikátnosť, Not Null, Foreign Key)
-    @ExceptionHandler(DataIntegrityViolationException.class)
+    /**
+     * Spracováva chyby integrity databázy (Unique constraint, Foreign key, Not Null).
+     * <p>
+     * Táto metóda analyzuje správu z databázového ovládača a prekladá ju na
+     * zrozumiteľnejší HTTP status a správu.
+     * <p>
+     * <em>Poznámka: Logika parsovania správ je závislá na použitom DB ovládači (tu prispôsobené pre PostgreSQL).</em>
+     *
+     * @param ex Výnimka vyhodená Hibernate/JPA vrstvou pri porušení integrity.
+     * @return {@link ProblemDetail} so statusom {@code 409 Conflict} alebo {@code 400 Bad Request}.
+     */    @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handleDatabaseViolation(DataIntegrityViolationException ex) {
         // Získame detailnú správu z databázy (Postgres drivera)
         String rootMsg = ex.getMostSpecificCause().getMessage();
@@ -96,6 +137,65 @@ public class GlobalExceptionHandler {
         problem.setProperty("db_error", rootMsg);
         problem.setProperty("timestamp", Instant.now());
 
+        return problem;
+    }
+
+    /**
+     * Spracováva prípad, keď požadovaný zdroj nebol nájdený.
+     *
+     * @param ex Výnimka obsahujúca správu, čo sa nenašlo.
+     * @return {@link ProblemDetail} so statusom {@code 404 Not Found}.
+     */
+    @ExceptionHandler(UserNotFoundException.class)
+    public ProblemDetail handleUserNotFound(UserNotFoundException ex) {
+        // Vytvoríme štandardnú 404 odpoveď
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,
+                ex.getMessage()
+        );
+
+        problem.setTitle("User Not Found");
+        problem.setType(URI.create("urn:problem-type:resource-not-found"));
+        problem.setProperty("timestamp", Instant.now());
+
+        return problem;
+    }
+
+    /**
+     * Spracováva bezpečnostné výnimky (pokus o prístup bez oprávnenia).
+     *
+     * @param ex Výnimka vyhodená Spring Security.
+     * @return {@link ProblemDetail} so statusom {@code 403 Forbidden}.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.FORBIDDEN,
+                "You do not have permission to access this resource."
+        );
+        problem.setTitle("Access Denied");
+        problem.setType(URI.create("urn:problem-type:access-denied"));
+        problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
+    /**
+     * Spracováva chyby pri deserializácii JSONu (napr. malformovaný JSON, zlý dátový typ).
+     *
+     * @param ex Výnimka vyhodená Jackson mapperom.
+     * @return {@link ProblemDetail} so statusom {@code 400 Bad Request}.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ProblemDetail handleJsonError(HttpMessageNotReadableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                "Invalid JSON request body."
+        );
+        problem.setTitle("JSON Parse Error");
+        problem.setType(URI.create("urn:problem-type:bad-request"));
+        // Pre debug pošli aj správu (v PROD opatrne)
+        problem.setProperty("error_detail", ex.getMessage());
+        problem.setProperty("timestamp", Instant.now());
         return problem;
     }
 }

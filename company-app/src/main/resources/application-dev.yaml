@@ -19,6 +19,10 @@ spring:
       hibernate:
         format_sql: true
 
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+      
 logging:
   level:
     org.hibernate.SQL: DEBUG
