@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers // Zapne podporu pre kontajnery
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE) // Nepoužívaj H2, použi Docker
 @Import(JpaConfig.class) // Dôležité: Aby fungoval @CreatedDate (Auditing)
-class EmployeeRepositoryTest {
+class EmployeeIntegrationTest {
 
     // ✅ Spring Boot 4 Magic: Toto automaticky nastaví datasource.url, username, password
     @Container
