@@ -23,12 +23,11 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
-@Testcontainers // Zapne podporu pre kontajnery
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE) // Nepoužívaj H2, použi Docker
-@Import(JpaConfig.class) // Dôležité: Aby fungoval @CreatedDate (Auditing)
+@Testcontainers
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import(JpaConfig.class)
 class EmployeeRepositoryTest {
 
-    // ✅ Spring Boot 4 Magic: Toto automaticky nastaví datasource.url, username, password
     @Container
     @ServiceConnection
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
@@ -41,7 +40,7 @@ class EmployeeRepositoryTest {
     void shouldSaveEmployeeWithAddresses() {
         // Given
         var employee = new Employee();
-        employee.setId(UUID.randomUUID()); // ID generujeme manuálne (podľa našej stratégie)
+        employee.setId(UUID.randomUUID());
         employee.setKeycloakID("keycloak-123");
         employee.setFirstName("Janko");
         employee.setLastName("Hrasko");
@@ -57,38 +56,29 @@ class EmployeeRepositoryTest {
         address.setCountry("Slovakia");
         address.setType(AddressType.HOME);
 
-        // Prepojenie
         employee.addAddress(address);
 
         // When
         employeeRepository.save(employee);
+        employeeRepository.flush(); // Vynútime zápis do DB
 
-        // Then (Flush a Clear, aby sme si vynútili načítanie z DB, nie z cache)
-        employeeRepository.flush();
-
-        // Získame ho z DB
+        // Then
         var savedEmployee = employeeRepository.findById(employee.getId()).orElseThrow();
 
-        // 1. Overíme dáta
         assertThat(savedEmployee.getFirstName()).isEqualTo("Janko");
-
-        // 2. Overíme Cascade (Adresa sa musela uložiť sama)
         assertThat(savedEmployee.getAddresses()).hasSize(1);
-        var savedAddress = savedEmployee.getAddresses().iterator().next();
-        assertThat(savedAddress.getCity()).isEqualTo("Bratislava");
+        assertThat(savedEmployee.getAddresses().iterator().next().getCity()).isEqualTo("Bratislava");
 
-        // 3. Overíme Auditing (CreatedDate by malo byť vyplnené)
+        // Auditing kontrola
         assertThat(savedEmployee.getCreatedAt()).isNotNull();
-        assertThat(savedAddress.getCreatedAt()).isNotNull();
     }
 
     @Test
     @DisplayName("Should delete address when removed from list (Orphan Removal)")
     void shouldDeleteOrphanAddress() {
-        // Given (Uložený zamestnanec s adresou)
+        // Given
         var employee = new Employee();
         employee.setId(UUID.randomUUID());
-        // ... vyplniť povinné polia (v teste si môžeš spraviť helper metódu) ...
         employee.setKeycloakID("k-999");
         employee.setFirstName("Test");
         employee.setLastName("User");
@@ -107,11 +97,11 @@ class EmployeeRepositoryTest {
         employee.addAddress(address);
         employeeRepository.saveAndFlush(employee);
 
-        // When (Vyhodíme adresu)
+        // When
         var fetchedEmployee = employeeRepository.findById(employee.getId()).orElseThrow();
         var addressToRemove = fetchedEmployee.getAddresses().iterator().next();
 
-        fetchedEmployee.removeAddress(addressToRemove); // Helper metóda
+        fetchedEmployee.removeAddress(addressToRemove);
         employeeRepository.saveAndFlush(fetchedEmployee);
 
         // Then

@@ -79,9 +79,10 @@ services:
       # '8081' (HOST) - Port, ktorý zadáte do prehliadača (http://localhost:8081).
       # '8080' (KONTAJNER) - Port, na ktorom Keycloak beží vnútri kontajnera.
       - "127.0.0.1:8081:8080"
-#    volumes:
+    volumes:
     # Pripravené na import konfigurácie (odkomentuj a vytvor priečinok, keď to budeš potrebovať)
-    # - ./keycloak-data/import:/opt/keycloak/data/import
+     - ./keycloak-data/import:/opt/keycloak/data/import
+
   
 volumes:
   # Tu formálne definujeme pomenovaný volume, ktorý používa Postgres.

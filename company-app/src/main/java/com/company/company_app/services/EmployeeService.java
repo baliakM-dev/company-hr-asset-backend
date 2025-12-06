@@ -1,19 +1,19 @@
 package com.company.company_app.services;
 
 import com.company.company_app.domain.Employee;
-import com.company.company_app.dto.employee.CreateEmployeeRequest;
-import com.company.company_app.dto.employee.EmployeeFilter;
-import com.company.company_app.dto.employee.EmployeeResponse;
-import com.company.company_app.dto.employee.TerminateEmployeeRequest;
+import com.company.company_app.dto.employee.*;
 import com.company.company_app.exceptions.UserAlreadyExistsException;
 import com.company.company_app.exceptions.UserNotFoundException;
 import com.company.company_app.mapper.EmployeeMapper;
 import com.company.company_app.repository.EmployeeRepository;
 import com.company.company_app.repository.EmployeeSpecifications;
+import com.company.company_app.services.keycloak.KeycloakUserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +31,7 @@ import java.util.UUID;
 public class EmployeeService {
     private final EmployeeRepository employeeRepository;
     private final EmployeeMapper employeeMapper;
+    private final KeycloakUserService keycloakUserService;
 
     /**
      * Vytvorí a perzistuje nového zamestnanca.
@@ -64,13 +65,17 @@ public class EmployeeService {
                     "Keycloak name '" + request.keycloakName() + "' already exists.");
         }
 
+        String keycloakId = null;
         try {
+            // 2. Najprv vytvorime usera v keycloaku
+            keycloakId = keycloakUserService.createUser(request);
+
             // 3. Mapovanie (DTO -> Entity)
             Employee employee = employeeMapper.toEntity(request);
 
             // Generovanie identifikátorov (Simulácia ID z externého systému)
             employee.setId(UUID.randomUUID());
-            employee.setKeycloakID(UUID.randomUUID().toString());
+            employee.setKeycloakID(keycloakId);
 
             // 3. Spracovanie adries (ak existujú)
             if (request.addresses() != null) {
@@ -83,12 +88,14 @@ public class EmployeeService {
 
             // 4. Uloženie (Hibernate Cascade uloží aj adresy)
             Employee saved = employeeRepository.save(employee);
-            log.info("Employee created successfully with ID={} and keycloakId={}",saved.getId(), saved.getKeycloakID());
+            log.info("Employee created successfully with ID={} and keycloakId={}", saved.getId(), saved.getKeycloakID());
 
             return employeeMapper.toResponse(saved);
         } catch (RuntimeException ex) {
             // 🛑 KOMPENZÁCIA: Ak DB padne, musíme upratať Keycloak
             log.error("Database save failed. Rolling back Keycloak user: {}", ex.getMessage());
+            if (keycloakId != null) keycloakUserService.deleteUser(keycloakId);
+
             throw ex; // Prehodíme chybu ďalej, aby Spring spravil DB Rollback
         }
     }
@@ -138,7 +145,7 @@ public class EmployeeService {
         Page<Employee> page = employeeRepository.findAll(spec, pageable);
 
         // 3. Mapovanie na DTO
-        return page.map(employeeMapper::toResponse);
+        return page.map(employeeMapper::toSummary);
     }
 
     /**
@@ -155,5 +162,48 @@ public class EmployeeService {
         return employeeRepository.findById(id)
                 .map(employeeMapper::toResponse)
                 .orElseThrow(() -> new UserNotFoundException("Employee not found with ID: " + id));
+    }
+
+    /**
+     * Úprava existujúceho zamestnanca.
+     *
+     * * <p><strong>URL:</strong> {@code PUT /api/v1/employees/{id}}</p>
+     *
+     * @param id Unikátny identifikátor zamestnanca (UUID).
+     * Status kód: {@code 200 OK}.
+     * @return {@link ResponseEntity} obsahujúce detail zamestnanca.
+     */
+    @Transactional
+    public EmployeeResponse updateEmployee(UUID id, EmployeeUpdateRequest request) {
+        log.info("Processing update request for employee with ID={}", id);
+        // 1. Najdem uzivatela v internej databaze podla id
+        Employee employee = employeeRepository.findById(id)
+                .orElseThrow(() -> new UserNotFoundException("Employee not found with ID: " + id));
+
+        // 2. Vytvorenie zálohy (Snapshot) Keycloak stavu PRED zmenou
+        UserRepresentation originalKeycloakUser = keycloakUserService.getUser(employee.getKeycloakID());
+
+        try {
+            // 3. Update v Keycloaku (Externý systém)
+            keycloakUserService.updateUser(employee.getKeycloakID(), request);
+
+            // 4. Update v internej DB
+            employeeMapper.updateEntityFromDto(request, employee);
+
+            // Explicitný save (hoci @Transactional by to flushol na konci, save je bezpečnejší pre vyvolanie DB chýb hneď)
+            Employee saved = employeeRepository.save(employee);
+
+            log.info("Employee updated successfully (DB + Keycloak).");
+            return employeeMapper.toResponse(saved);
+
+        } catch (Exception ex) {
+            // 🛑 KOMPENZÁCIA (ROLLBACK)
+            log.error("Database update failed after Keycloak update. Initiating Keycloak rollback. Error: {}", ex.getMessage());
+
+            // Vrátime Keycloak do pôvodného stavu zo zálohy
+            keycloakUserService.revertUser(employee.getKeycloakID(), originalKeycloakUser);
+
+            throw ex; // Prehodíme chybu ďalej, aby Spring spravil DB Rollback
+        }
     }
 }
