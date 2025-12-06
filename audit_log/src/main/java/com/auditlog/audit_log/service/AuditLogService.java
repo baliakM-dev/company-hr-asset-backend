@@ -13,22 +13,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-Java
-        package com.auditlog.audit_log.service;
-
-import com.auditlog.audit_log.domain.AuditLogEntity;
-import com.auditlog.audit_log.dto.AuditEventDto;
-import com.auditlog.audit_log.dto.AuditLogFilter;
-import com.auditlog.audit_log.mapper.AuditLogMapper;
-import com.auditlog.audit_log.repository.AuditLogRepository;
-import com.auditlog.audit_log.repository.AuditLogSpecification;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 /**
  * Servisná vrstva zodpovedná za čítanie a vyhľadávanie v auditných logoch.
  * <p>
