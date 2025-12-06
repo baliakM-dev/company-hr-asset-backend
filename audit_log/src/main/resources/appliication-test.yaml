@@ -1,0 +1,26 @@
+# --- TEST PROFIL (Neon DB / Cloud / Integračné testy) ---
+# Aktivuje sa cez: -Dspring.profiles.active=test
+spring:
+  config:
+    activate:
+      on-profile: test
+
+  datasource:
+    # Opravený preklep NENON -> NEON
+    # Očakáva full URL, napr.: jdbc:postgresql://...
+    url: ${POSTGRES_AUDITLOG_NENON_DB}
+    username: ${POSTGRES_AUDITLOG_NEON_USER}
+    password: ${POSTGRES_AUDITLOG_NEON_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    show-sql: false # V testoch logy zbytočne nešpiníme
+    hibernate:
+      # VALIDATE: Skontroluje, či Java entity sedia s Flyway schémou.
+      # Ak nie, appka nenaštartuje. Super poistka.
+      ddl-auto: validate
+
+  # Kafka v testoch často používame EmbeddedKafka, ale ak chceš externú:
+  kafka:
+    # Pre Neon/Cloud setup budeš asi potrebovať SASL/SSL config (tu je len placeholder)
+    bootstrap-servers: ${KAFKA_TEST_SERVERS:localhost:9092}

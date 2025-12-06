@@ -1,0 +1,24 @@
+# ---DEV PROFIL (Lokálny vývoj s Dockerom) ---
+# Aktivuje sa cez: -Dspring.profiles.active=dev
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  datasource:
+    # Docker Postgres často beží na inom porte, aby sa nebila s lokálnym
+    url: jdbc:postgresql://localhost:5434/${POSTGRES_AUDITLOG_DB}
+    username: ${POSTGRES_AUDITLOG_USER}
+    password: ${POSTGRES_AUDITLOG_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    show-sql: true # V DEV chceme vidieť query
+    open-in-view: false # Best Practice: Vypnúť OSIV (šetrí DB connections)
+    hibernate:
+      ddl-auto: none # Validácia: Schému spravuje výhradne Flyway!
+    properties:
+      hibernate:
+        format_sql: true
+        # Aby Hibernate nefrflal pri startupe na LOB types
+        jdbc.lob.non_contextual_creation: true
