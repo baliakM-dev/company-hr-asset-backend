@@ -4,6 +4,7 @@ import com.company.company_app.domain.Employee;
 import com.company.company_app.dto.employee.*;
 import com.company.company_app.exceptions.UserAlreadyExistsException;
 import com.company.company_app.exceptions.UserNotFoundException;
+import com.company.company_app.kafka.EmployeeEventProducer;
 import com.company.company_app.mapper.EmployeeMapper;
 import com.company.company_app.repository.EmployeeRepository;
 import com.company.company_app.repository.EmployeeSpecifications;
@@ -32,6 +33,7 @@ public class EmployeeService {
     private final EmployeeRepository employeeRepository;
     private final EmployeeMapper employeeMapper;
     private final KeycloakUserService keycloakUserService;
+    private final EmployeeEventProducer eventProducer;
 
     /**
      * Vytvorí a perzistuje nového zamestnanca.
@@ -88,6 +90,11 @@ public class EmployeeService {
 
             // 4. Uloženie (Hibernate Cascade uloží aj adresy)
             Employee saved = employeeRepository.save(employee);
+
+            // 🚀 ODOSLANIE EVENTU (Odošle sa až po úspešnom commite)
+            // Payload môže byť len ID, alebo celé DTO (záleží, čo Audit potrebuje)
+            eventProducer.sendEvent(saved.getId(), "CREATE", employeeMapper.toResponse(saved));
+
             log.info("Employee created successfully with ID={} and keycloakId={}", saved.getId(), saved.getKeycloakID());
 
             return employeeMapper.toResponse(saved);
@@ -122,7 +129,11 @@ public class EmployeeService {
         // 3. Uloženie zmien
         // Poznámka: Vďaka @Transactional by Hibernate vykonal update aj bez explicitného save(),
         // ale pre čitateľnosť je vhodné ho ponechať.
-        employeeRepository.save(employee);
+        // Uloženie
+        Employee saved = employeeRepository.save(employee);
+        // 🚀 ODOSLANIE EVENTU
+        // Ako payload pošleme dôvod ukončenia
+        eventProducer.sendEvent(saved.getId(), "TERMINATE", request);
     }
 
     /**
@@ -173,37 +184,47 @@ public class EmployeeService {
      * Status kód: {@code 200 OK}.
      * @return {@link ResponseEntity} obsahujúce detail zamestnanca.
      */
-    @Transactional
     public EmployeeResponse updateEmployee(UUID id, EmployeeUpdateRequest request) {
         log.info("Processing update request for employee with ID={}", id);
-        // 1. Najdem uzivatela v internej databaze podla id
         Employee employee = employeeRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("Employee not found with ID: " + id));
 
-        // 2. Vytvorenie zálohy (Snapshot) Keycloak stavu PRED zmenou
+        // Snapshot pre rollback
         UserRepresentation originalKeycloakUser = keycloakUserService.getUser(employee.getKeycloakID());
 
+        // Premenná na sledovanie, či Keycloak update prešiel
+        boolean keycloakUpdated = false;
+
         try {
-            // 3. Update v Keycloaku (Externý systém)
+            // 1. Najprv Keycloak
             keycloakUserService.updateUser(employee.getKeycloakID(), request);
+            keycloakUpdated = true; // Značka: Keycloak sme úspešne zmenili
 
-            // 4. Update v internej DB
+            // 2. Potom Interná DB
             employeeMapper.updateEntityFromDto(request, employee);
-
-            // Explicitný save (hoci @Transactional by to flushol na konci, save je bezpečnejší pre vyvolanie DB chýb hneď)
             Employee saved = employeeRepository.save(employee);
 
-            log.info("Employee updated successfully (DB + Keycloak).");
+            // 3. Event
+            eventProducer.sendEvent(saved.getId(), "UPDATE", request);
+
+            log.info("Employee updated successfully.");
             return employeeMapper.toResponse(saved);
 
         } catch (Exception ex) {
-            // 🛑 KOMPENZÁCIA (ROLLBACK)
-            log.error("Database update failed after Keycloak update. Initiating Keycloak rollback. Error: {}", ex.getMessage());
+            log.error("Update failed. Error: {}", ex.getMessage());
 
-            // Vrátime Keycloak do pôvodného stavu zo zálohy
-            keycloakUserService.revertUser(employee.getKeycloakID(), originalKeycloakUser);
+            // Rollback Keycloaku robíme IBA ak prešiel jeho update, ale zlyhalo niečo potom (DB/Kafka)
+            if (keycloakUpdated) {
+                log.warn("Initiating Keycloak rollback...");
+                try {
+                    keycloakUserService.revertUser(employee.getKeycloakID(), originalKeycloakUser);
+                } catch (Exception revertEx) {
+                    log.error("CRITICAL: Failed to rollback Keycloak user!", revertEx);
+                    // Tu by si v reálnom svete posielal alert adminovi
+                }
+            }
 
-            throw ex; // Prehodíme chybu ďalej, aby Spring spravil DB Rollback
+            throw ex; // Prehodíme chybu, aby @Transactional spravil DB rollback a Handler poslal HTTP response
         }
     }
 }

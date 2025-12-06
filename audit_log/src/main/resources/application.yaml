@@ -1,0 +1,57 @@
+# --- SPOLOČNÁ KONFIGURÁCIA (DEFAULT) ---
+server:
+  port: 8083
+  shutdown: graceful
+
+spring:
+  application:
+    name: audit-log
+  profiles:
+    active: dev
+
+  threads:
+    virtual:
+      enabled: true
+
+  # Flyway je zapnutý všade (Best Practice: migráciu riadi nástroj, nie Hibernate)
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  # Základná Kafka konfigurácia (Serializéry sú povinné!)
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      # DÔLEŽITÉ: Unikátne ID skupiny.
+      # Ak by si spustil 2 inštancie audit servisu s týmto ID, prácu si rozdelia (Load Balancing).
+      group-id: audit-log-group-1
+      # Ak sa service pripojí prvýkrát, prečíta správy od začiatku (aby ti neušlo nič z histórie)
+      auto-offset-reset: earliest
+      # Prijímame String (JSON) a rozparsujeme ho v kóde. Je to bezpečnejšie pre polyglot (Kotlin->Java) prostredie.
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        max.poll.records: 500
+
+    # ⚙️ JSON (JACKSON)
+    jackson:
+      serialization:
+        write-dates-as-timestamps: false
+
+  security:
+    oauth2:
+      resource server:
+        jwt:
+          issuer-uri: ${KEYCLOAK_SERVERURL}/realms/${KEYCLOAK_REALM}
+          authorities-claim-name: roles
+          authority-prefix: ROLE_
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      show-details: always

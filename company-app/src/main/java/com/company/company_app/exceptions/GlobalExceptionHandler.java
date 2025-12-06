@@ -198,4 +198,84 @@ public class GlobalExceptionHandler {
         problem.setProperty("timestamp", Instant.now());
         return problem;
     }
+
+    /**
+     * Spracováva chyby prichádzajúce z externých klientov (napr. Keycloak Admin Client).
+     * <p>
+     * Ak Keycloak vráti 400 (Bad Request) alebo 409 (Conflict), táto metóda
+     * extrahuje správu z tela odpovede a pošle ju klientovi.
+     */
+    @ExceptionHandler(jakarta.ws.rs.ClientErrorException.class)
+    public ProblemDetail handleKeycloakClientError(jakarta.ws.rs.ClientErrorException ex) {
+        int statusCode = ex.getResponse().getStatus();
+
+        // Skúsime prečítať detailnú správu z Keycloaku (napr. "Password length too short")
+        String errorMsg = "External system error";
+        try {
+            // Pozor: readEntity spotrebuje stream, dá sa prečítať len raz
+            errorMsg = ex.getResponse().readEntity(String.class);
+        } catch (Exception e) {
+            // Ak sa nepodarí prečítať body, použijeme default správu
+            errorMsg = ex.getMessage();
+        }
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.valueOf(statusCode),
+                errorMsg != null && !errorMsg.isBlank() ? errorMsg : "Error from identity provider"
+        );
+
+        problem.setTitle("Identity Provider Error");
+        problem.setType(URI.create("urn:problem-type:external-service-error"));
+        problem.setProperty("service", "Keycloak");
+        problem.setProperty("timestamp", Instant.now());
+
+        return problem;
+    }
+
+    /**
+     * Spracováva manuálne validácie a logické chyby vyhodené zo Service vrstvy.
+     * Napr. throw new IllegalArgumentException("Dátum ukončenia musí byť po dátume začiatku");
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+        assert problem.getDetail() != null;
+        if (problem.getDetail().contains("username")){
+            problem.setTitle("Invalid Username");
+            problem.setType(URI.create("urn:problem-type:invalid-username"));
+            problem.setProperty("timestamp", Instant.now());
+            problem.setDetail("Username must be at least 3 characters long and contain only letters, numbers and underscores.");
+        }
+        problem.setTitle("Invalid Argument");
+        problem.setType(URI.create("urn:problem-type:illegal-argument"));
+        problem.setProperty("timestamp", Instant.now());
+
+        return problem;
+    }
+
+    /**
+     * Spracováva chyby, keď klient pošle parameter v zlom formáte.
+     * Napríklad: ID má byť UUID, ale príde text "abc".
+     */
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ProblemDetail handleTypeMismatch(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex) {
+        String detail = String.format("Parameter '%s' has invalid format. Expected type: '%s'.",
+                ex.getName(),
+                ex.getRequiredType() != null ? ex.getRequiredType().getSimpleName() : "unknown");
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                detail
+        );
+
+        problem.setTitle("Invalid Parameter Format");
+        problem.setType(URI.create("urn:problem-type:type-mismatch"));
+        problem.setProperty("parameter", ex.getName());
+        problem.setProperty("timestamp", Instant.now());
+
+        return problem;
+    }
 }

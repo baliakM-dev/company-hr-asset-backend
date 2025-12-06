@@ -172,9 +172,25 @@ public class KeycloakUserService {
             userResource.update(user);
             log.info("Keycloak user updated successfully.");
         } catch (ClientErrorException e) {
-            if (e.getResponse().getStatus() == 409) {
+            // Získam status kód
+            int status = e.getResponse().getStatus();
+
+            // VALIDÁCIA (HTTP 400) - napr. krátke heslo, zlé znaky, povinné polia
+            if (status == 400) {
+                // Prečítame telo odpovede ako String, tam je text chyby od Keycloaku
+                String errorBody = e.getResponse().readEntity(String.class);
+                log.error("Validation error from Keycloak: {}", errorBody);
+
+                // Môžeš vyhodiť vlastnú výnimku s textom z Keycloaku
+                throw new IllegalArgumentException("Keycloak validation error: " + errorBody);
+            }
+
+            // DUPLICITA (HTTP 409)
+            if (status == 409) {
                 throw new UserAlreadyExistsException("Username or Email already exists in Keycloak.");
             }
+
+            // Iné chyby (401, 403, 404 atď.)
             throw e;
         }
     }

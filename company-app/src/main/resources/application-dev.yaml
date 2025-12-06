@@ -1,16 +1,15 @@
-# ---DEV PROFIL (Lokálny vývoj s Dockerom) ---
-# Aktivuje sa cez: -Dspring.profiles.active=dev
 spring:
+
   config:
     activate:
       on-profile: dev
-
+  
   datasource:
     url: jdbc:postgresql://localhost:5433/${POSTGRES_COMPANYDB_DB}
     username: ${POSTGRES_COMPANYDB_USER}
     password: ${POSTGRES_COMPANYDB_PASSWORD}
     driver-class-name: org.postgresql.Driver
-
+  
   jpa:
     show-sql: true
     hibernate:
@@ -19,10 +18,8 @@ spring:
       hibernate:
         format_sql: true
 
-  jackson:
-    deserialization:
-      fail-on-unknown-properties: true
-      
-logging:
-  level:
-    org.hibernate.SQL: DEBUG
+keycloak:
+  server-url: ${KEYCLOAK_SERVER_URL}
+  realm: ${KEYCLOAK_REALM}
+  client-id: ${KEYCLOAK_CLIENT_ID_ADMIN}
+  client-secret: ${KEYCLOAK_CLIENT_SECRET}
