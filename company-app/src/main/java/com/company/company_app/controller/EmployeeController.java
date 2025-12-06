@@ -1,11 +1,9 @@
 package com.company.company_app.controller;
 
-import com.company.company_app.dto.employee.CreateEmployeeRequest;
-import com.company.company_app.dto.employee.EmployeeFilter;
-import com.company.company_app.dto.employee.EmployeeResponse;
-import com.company.company_app.dto.employee.TerminateEmployeeRequest;
+import com.company.company_app.dto.employee.*;
 import com.company.company_app.services.EmployeeService;
 import jakarta.validation.Valid;
+import jakarta.ws.rs.Path;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -123,6 +121,28 @@ public class EmployeeController {
     @PreAuthorize("hasRole('EMPLOYEE:READ') or @employeeSecurity.isOwner(#id)")
     public ResponseEntity<EmployeeResponse> getEmployee(@PathVariable UUID id) {
         return ResponseEntity.ok(employeeService.getEmployee(id));
+    }
+
+    /**
+     * Úprava existujúceho zamestnanca.
+     * <p>
+     * Aktualizuje údaje v lokálnej DB aj v Keycloaku.
+     * Vyžaduje oprávnenie na update alebo vlastníctvo účtu.
+     *
+     * <p><strong>URL:</strong> {@code PUT /api/v1/employees/{id}}</p>
+     *
+     * @param id Unikátny identifikátor zamestnanca (UUID).
+     * @param request DTO s novými údajmi.
+     * @return {@link ResponseEntity} obsahujúce aktualizovaný detail zamestnanca.
+     * Status kód: {@code 200 OK}.
+     */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('EMPLOYEE:UPDATE') or @employeeSecurity.isOwner(#id)")
+    public ResponseEntity<EmployeeResponse> updateEmployee(
+            @PathVariable UUID id,
+            @RequestBody @Valid EmployeeUpdateRequest request // Nezabudni na @Valid
+    ) {
+        return ResponseEntity.ok(employeeService.updateEmployee(id, request));
     }
 
 }

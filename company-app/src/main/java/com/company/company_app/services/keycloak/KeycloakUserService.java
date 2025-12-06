@@ -1,7 +1,9 @@
 package com.company.company_app.services.keycloak;
 
 import com.company.company_app.dto.employee.CreateEmployeeRequest;
+import com.company.company_app.dto.employee.EmployeeUpdateRequest;
 import com.company.company_app.exceptions.UserAlreadyExistsException;
+import jakarta.ws.rs.ClientErrorException;
 import jakarta.ws.rs.core.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -142,6 +144,64 @@ public class KeycloakUserService {
             log.error("Failed to send setup email to user {}. SMTP might be misconfigured.", userId, e);
             // Nevyhadzujeme výnimku vyššie, user je vytvorený, email sa dá poslať znova manuálne cez Admin konzolu
         }
+    }
+
+    /**
+     * Aktualizuje údaje používateľa v Keycloaku (Meno, Priezvisko, Username).
+     *
+     * @param keycloakId ID používateľa.
+     * @param request Nové údaje.
+     * @throws UserAlreadyExistsException Ak je nové username už obsadené.
+     */
+    public void updateUser(String keycloakId, EmployeeUpdateRequest request) {
+        log.info("Updating Keycloak user with ID: {}", keycloakId);
+        UserResource userResource = keycloak.realm(realm).users().get(keycloakId);
+
+        // 1. Načítam aktuálnu reprezentáciu
+        UserRepresentation user = userResource.toRepresentation();
+
+        // 2. Skontrolujeme duplicitu username iba ak sa zmenilo
+        if (!user.getUsername().equals(request.keycloakName())) {
+            user.setUsername(request.keycloakName());
+        }
+        user.setFirstName(request.firstName());
+        user.setLastName(request.lastName());
+
+        try {
+            // 3. Odošleme zmeny
+            userResource.update(user);
+            log.info("Keycloak user updated successfully.");
+        } catch (ClientErrorException e) {
+            if (e.getResponse().getStatus() == 409) {
+                throw new UserAlreadyExistsException("Username or Email already exists in Keycloak.");
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Vráti používateľa do pôvodného stavu (Rollback).
+     *
+     * @param keycloakId ID používateľa.
+     * @param originalState Objekt UserRepresentation stiahnutý PRED updateom.
+     */
+    public void revertUser(String keycloakId, UserRepresentation originalState) {
+        log.warn("Reverting Keycloak user {} to original state due to transaction rollback.", keycloakId);
+        try {
+            UserResource userResource = keycloak.realm(realm).users().get(keycloakId);
+            userResource.update(originalState);
+            log.info("Keycloak rollback successful.");
+        } catch (Exception e) {
+            // Kritická chyba - dáta sú nekonzistentné
+            log.error("CRITICAL: Failed to rollback Keycloak user {}. Data inconsistency requires manual intervention!", keycloakId, e);
+        }
+    }
+
+    /**
+     * Získa aktuálnu reprezentáciu používateľa (používa sa na vytvorenie zálohy pred updateom).
+     */
+    public UserRepresentation getUser(String keycloakId) {
+        return keycloak.realm(realm).users().get(keycloakId).toRepresentation();
     }
 
 }

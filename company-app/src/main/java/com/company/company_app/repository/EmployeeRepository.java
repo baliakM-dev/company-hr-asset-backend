@@ -12,6 +12,4 @@ import java.util.UUID;
 public interface EmployeeRepository extends JpaRepository<Employee, UUID>, JpaSpecificationExecutor<Employee> {
     boolean existsByEmail(String email);
     boolean existsByKeycloakName(String keycloakName);
-
-    HttpHeaders findByKeycloakID(String keycloakID);
 }

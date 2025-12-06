@@ -6,6 +6,7 @@ import com.company.company_app.dto.address.AddressResponse;
 import com.company.company_app.dto.address.CreateAddressDto;
 import com.company.company_app.dto.employee.CreateEmployeeRequest;
 import com.company.company_app.dto.employee.EmployeeResponse;
+import com.company.company_app.dto.employee.EmployeeUpdateRequest;
 import org.mapstruct.*;
 
 /**
@@ -94,4 +95,30 @@ public interface EmployeeMapper {
     @Mapping(target = "employee", ignore = true)
     @Mapping(target = "version", ignore = true)
     Address toAddressEntity(CreateAddressDto dto);
+
+    /**
+     * Aktualizuje údaje existujúceho zamestnanca na základe DTO.
+     * <p>
+     * Metóda využíva {@code @MappingTarget} na priamu modifikáciu načítanej entity (Dirty Checking).
+     * <p>
+     * <strong>Bezpečnostné opatrenie:</strong> Explicitne ignoruje citlivé a systémové polia,
+     * ktoré sa nesmú meniť cez tento endpoint (ID, KeycloakID, Status, Audit polia),
+     * aby sa zachovala konzistencia a integrita dát.
+     *
+     * @param request DTO s aktualizovanými údajmi (meno, priezvisko, email...).
+     * @param employee Cieľová entita, ktorá bude modifikovaná.
+     */
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "addresses", ignore = true) // Adresy neriešime v tomto update
+    @Mapping(target = "status", ignore = true)
+    @Mapping(target = "keycloakID", ignore = true)
+    @Mapping(target = "startedWork", ignore = true)
+    @Mapping(target = "endWork", ignore = true)
+    @Mapping(target = "terminationReason", ignore = true)
+    @Mapping(target = "createdBy", ignore = true)
+    @Mapping(target = "updatedBy", ignore = true)
+    @Mapping(target = "version", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
+    void updateEntityFromDto(EmployeeUpdateRequest request, @MappingTarget Employee employee);
 }
